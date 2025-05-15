@@ -2,6 +2,27 @@
 
 import tensorflow as tf
 
+
+# === Refinement Module: decoder-on-decoder residual enhancement ===
+class OutputRefinement(tf.keras.layers.Layer):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.refine = tf.keras.Sequential([
+            tf.keras.layers.Conv2D(hidden_dim, 3, padding='same', activation='relu'),
+            tf.keras.layers.Conv2D(hidden_dim, 3, padding='same', activation='relu'),
+            tf.keras.layers.Conv2D(10, 1)
+        ])
+
+    def call(self, x):
+        residual = self.refine(x)
+        return x + residual
+
+# === Auxiliary Loss Module: Detect symmetry and spatial coherence ===
+def compute_auxiliary_loss(output):
+    flipped = tf.image.flip_left_right(output)
+    symmetry_loss = tf.reduce_mean(tf.square(output - flipped))
+    return 0.01 * symmetry_loss
+
 class EpisodicMemory(tf.keras.layers.Layer):
     def __init__(self):
         super().__init__()
@@ -203,6 +224,7 @@ class Sage14FX(tf.keras.Model):
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Conv2D(10, 1)
         ])
+        self.refiner = OutputRefinement(hidden_dim)
         self.gate_scale = tf.keras.layers.Dense(hidden_dim, activation='sigmoid')
 
     def call(self, x_seq, y_seq=None, training=False):
@@ -251,6 +273,7 @@ class Sage14FX(tf.keras.Model):
             blended = tf.nn.relu(blended + refined)
 
         output_logits = self.decoder(blended)
+        output_logits = self.refiner(output_logits)
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
@@ -263,6 +286,7 @@ class Sage14FX(tf.keras.Model):
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             loss = loss_fn(y_seq[:, -1], output_logits)
             loss += 0.01 * tf.reduce_sum(alpha)
+            loss += compute_auxiliary_loss(tf.nn.softmax(output_logits))  # symmetry loss
             self._loss_pain = loss
 
         return output_logits
