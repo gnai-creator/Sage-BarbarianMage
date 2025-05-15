@@ -14,7 +14,7 @@ class OutputRefinement(tf.keras.layers.Layer):
 
     def call(self, x):
         residual = self.refine(x)
-        return residual
+        return x + residual
 
 # === Auxiliary Loss Module: Detect symmetry and spatial coherence ===
 def compute_auxiliary_loss(output):
@@ -271,8 +271,7 @@ class Sage14FX(tf.keras.Model):
             blended = tf.nn.relu(blended + refined)
 
         output_logits = self.decoder(blended)
-        refined_logits = self.refiner(output_logits)
-        output_logits = 0.7 * output_logits + 0.3 * refined_logits
+        output_logits = self.refiner(output_logits)
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
