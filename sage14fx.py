@@ -243,6 +243,7 @@ class Sage14FX(tf.keras.Model):
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             loss = loss_fn(y_seq[:, -1], output_logits)
-            self._loss_pain = loss * alpha
+            loss += 0.01 * tf.reduce_sum(alpha)  # Ensure alpha influences the gradient path
+            self._loss_pain = loss
 
         return output_logits
