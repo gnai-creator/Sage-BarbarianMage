@@ -277,7 +277,8 @@ class Sage14FX(tf.keras.Model):
             loss += 0.01 * tf.reduce_sum(alpha)
             loss += compute_auxiliary_loss(tf.nn.softmax(output_logits))
             conf = tf.reduce_mean(tf.reduce_max(tf.nn.softmax(output_logits), axis=-1))
-            loss -= 0.01 * conf  # Confiança: fé na escolha certa
+            loss -= tf.reduce_mean(alpha) * conf  # Fé multiplicada pela confiança
             self._loss_pain = loss
 
         return output_logits
+
