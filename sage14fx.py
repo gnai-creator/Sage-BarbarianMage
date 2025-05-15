@@ -14,7 +14,7 @@ class OutputRefinement(tf.keras.layers.Layer):
 
     def call(self, x):
         residual = self.refine(x)
-        return x + residual
+        return residual
 
 # === Auxiliary Loss Module: Detect symmetry and spatial coherence ===
 def compute_auxiliary_loss(output):
@@ -40,7 +40,6 @@ class EpisodicMemory(tf.keras.layers.Layer):
         if self.buffer is None:
             return tf.zeros((1, 1, 1))
         return self.buffer
-
 
 class LongTermMemory(tf.keras.layers.Layer):
     def __init__(self, memory_size, embedding_dim):
