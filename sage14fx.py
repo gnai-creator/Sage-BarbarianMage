@@ -13,8 +13,7 @@ class OutputRefinement(tf.keras.layers.Layer):
         ])
 
     def call(self, x):
-        residual = self.refine(x)
-        return x + residual
+        return self.refine(x)
 
 # === Auxiliary Loss Module: Detect symmetry and spatial coherence ===
 def compute_auxiliary_loss(output):
@@ -66,7 +65,6 @@ class LongTermMemory(tf.keras.layers.Layer):
         best = tf.argmin(sim, axis=-1)
         return self.recall(best)
 
-
 class PositionalEncoding2D(tf.keras.layers.Layer):
     def __init__(self, channels):
         super().__init__()
@@ -82,7 +80,6 @@ class PositionalEncoding2D(tf.keras.layers.Layer):
         pos = tf.tile(pos, [b, 1, 1, 1])
         pos = self.dense(pos)
         return tf.concat([x, pos], axis=-1)
-
 
 class FractalEncoder(tf.keras.layers.Layer):
     def __init__(self, dim):
@@ -100,7 +97,6 @@ class FractalEncoder(tf.keras.layers.Layer):
         skip = self.residual(x)
         return tf.nn.relu(out + skip)
 
-
 class FractalBlock(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
@@ -114,7 +110,6 @@ class FractalBlock(tf.keras.layers.Layer):
         skip = self.skip(x)
         return tf.nn.relu(out + skip)
 
-
 class MultiHeadAttentionWrapper(tf.keras.layers.Layer):
     def __init__(self, dim, heads=8):
         super().__init__()
@@ -122,7 +117,6 @@ class MultiHeadAttentionWrapper(tf.keras.layers.Layer):
 
     def call(self, x):
         return self.attn(query=x, value=x, key=x)
-
 
 class ChoiceHypothesisModule(tf.keras.layers.Layer):
     def __init__(self, dim):
@@ -145,7 +139,6 @@ class ChoiceHypothesisModule(tf.keras.layers.Layer):
             weights = tf.reshape(weights, [-1, 4, 1, 1, 1])
             return tf.reduce_sum(stacked * weights, axis=1)
 
-
 class TaskPainSystem(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
@@ -164,7 +157,6 @@ class TaskPainSystem(tf.keras.layers.Layer):
         tf.print("Pain:", raw_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
         return adjusted_pain, gate, exploration_gate, alpha
 
-
 class AttentionOverMemory(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
@@ -180,7 +172,6 @@ class AttentionOverMemory(tf.keras.layers.Layer):
         attended = tf.reduce_sum(attn_weights * v, axis=1)
         return attended
 
-
 class EnhancedEncoder(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
@@ -194,7 +185,6 @@ class EnhancedEncoder(tf.keras.layers.Layer):
 
     def call(self, x):
         return self.blocks(x)
-
 
 class Sage14FX(tf.keras.Model):
     def __init__(self, hidden_dim, use_hard_choice=False):
@@ -271,7 +261,8 @@ class Sage14FX(tf.keras.Model):
             blended = tf.nn.relu(blended + refined)
 
         output_logits = self.decoder(blended)
-        output_logits = self.refiner(output_logits)
+        refined_logits = tf.stop_gradient(self.refiner(output_logits))
+        output_logits = 0.7 * output_logits + 0.3 * refined_logits
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
