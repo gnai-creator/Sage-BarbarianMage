@@ -38,7 +38,7 @@ class LongTermMemory(tf.keras.layers.Layer):
         self.memory.assign(update)
 
     def recall(self, index):
-        return tf.gather(self.memory, index)
+        return tf.expand_dims(tf.gather(self.memory, index), axis=0)
 
     def match_context(self, context):
         context = tf.reshape(context, [tf.shape(context)[0], 1, self.embedding_dim])
@@ -63,6 +63,7 @@ class PositionalEncoding2D(tf.keras.layers.Layer):
         pos = tf.tile(pos, [b, 1, 1, 1])
         pos = self.dense(pos)
         return tf.concat([x, pos], axis=-1)
+
 
 class FractalEncoder(tf.keras.layers.Layer):
     def __init__(self, dim):
@@ -198,7 +199,9 @@ class Sage14FX(tf.keras.Model):
         for t in range(T):
             early = self.early_proj(x_seq[:, t])
             x = self.norm(self.encoder(early))
-            x_flat = tf.reduce_mean(x, axis=[1, 2])
+            x_flat = tf.keras.layers.GlobalAveragePooling2D()(x)
+            x_flat = tf.keras.layers.Dense(self.hidden_dim, activation='relu')(x_flat)
+            x_flat = tf.keras.layers.Dense(self.hidden_dim)(x_flat)
             out, [state] = self.agent(x_flat, [state])
             self.memory.write(out)
 
@@ -219,10 +222,14 @@ class Sage14FX(tf.keras.Model):
         channel_gate = tf.reshape(channel_gate, [batch, 1, 1, self.hidden_dim])
         channel_gate = tf.clip_by_value(channel_gate, 0.0, 1.0)
 
-        blended = channel_gate * chosen_transform + (1 - channel_gate) * last_input_encoded
-        if hasattr(self, '_exploration') and hasattr(self, '_alpha'):
-            blend_ratio = self._alpha
-            blended = blend_ratio * blended + (1 - blend_ratio) * last_input_encoded
+        gate_softmax = tf.nn.softmax(tf.concat([channel_gate, 1 - channel_gate], axis=-1), axis=-1)
+        chosen_weight = gate_softmax[..., :self.hidden_dim]
+        last_weight = gate_softmax[..., self.hidden_dim:]
+        blended = chosen_weight * chosen_transform + last_weight * last_input_encoded
+
+        if hasattr(self, '_alpha'):
+            alpha = tf.reshape(self._alpha, [batch, 1, 1, 1])
+            blended = alpha * blended + (1 - alpha) * last_input_encoded
 
         output_logits = self.decoder(blended)
 
@@ -234,7 +241,8 @@ class Sage14FX(tf.keras.Model):
             self._exploration = exploration
             self._alpha = alpha
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
-            loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(y_seq[:, -1], output_logits)
+            loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+            loss = loss_fn(y_seq[:, -1], output_logits)
             self._loss_pain = loss * alpha
 
         return output_logits
