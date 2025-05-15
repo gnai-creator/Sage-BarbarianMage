@@ -271,8 +271,8 @@ class Sage14FX(tf.keras.Model):
             blended = tf.nn.relu(blended + refined)
 
         output_logits = self.decoder(blended)
-        refined = self.refiner(output_logits)
-        output_logits = 0.7 * output_logits + 0.3 * refined
+        refined_logits = self.refiner(output_logits)
+        output_logits = 0.7 * output_logits + 0.3 * refined_logits
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
@@ -285,7 +285,7 @@ class Sage14FX(tf.keras.Model):
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             loss = loss_fn(y_seq[:, -1], output_logits)
             loss += 0.01 * tf.reduce_sum(alpha)
-            loss += compute_auxiliary_loss(tf.nn.softmax(output_logits))  # symmetry loss
+            loss += compute_auxiliary_loss(tf.nn.softmax(output_logits))
             self._loss_pain = loss
 
         return output_logits
