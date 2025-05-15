@@ -2,7 +2,6 @@
 
 import tensorflow as tf
 
-
 # === Refinement Module: decoder-on-decoder residual enhancement ===
 class OutputRefinement(tf.keras.layers.Layer):
     def __init__(self, hidden_dim):
@@ -273,7 +272,8 @@ class Sage14FX(tf.keras.Model):
             blended = tf.nn.relu(blended + refined)
 
         output_logits = self.decoder(blended)
-        output_logits = self.refiner(output_logits)
+        refined = self.refiner(output_logits)
+        output_logits = 0.7 * output_logits + 0.3 * refined
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
