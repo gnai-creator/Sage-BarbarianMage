@@ -162,17 +162,28 @@ class AttentionOverMemory(tf.keras.layers.Layer):
         return attended
 
 
+class EnhancedEncoder(tf.keras.layers.Layer):
+    def __init__(self, dim):
+        super().__init__()
+        self.blocks = tf.keras.Sequential([
+            FractalEncoder(dim),
+            FractalBlock(dim),
+            FractalBlock(dim),
+            FractalBlock(dim),
+            tf.keras.layers.Conv2D(dim, 3, padding='same', activation='relu')
+        ])
+
+    def call(self, x):
+        return self.blocks(x)
+
+
 class Sage14FX(tf.keras.Model):
     def __init__(self, hidden_dim, use_hard_choice=False):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.use_hard_choice = use_hard_choice
         self.early_proj = tf.keras.layers.Conv2D(hidden_dim, 1, activation='relu')
-        self.encoder = tf.keras.Sequential([
-            FractalEncoder(hidden_dim),
-            FractalBlock(hidden_dim),
-            tf.keras.layers.Conv2D(hidden_dim, 3, padding='same', activation='relu')
-        ])
+        self.encoder = EnhancedEncoder(hidden_dim)
         self.norm = tf.keras.layers.LayerNormalization()
         self.pos_enc = PositionalEncoding2D(2)
         self.attn = MultiHeadAttentionWrapper(hidden_dim, heads=8)
@@ -182,13 +193,17 @@ class Sage14FX(tf.keras.Model):
         self.chooser = ChoiceHypothesisModule(hidden_dim)
         self.pain_system = TaskPainSystem(hidden_dim)
         self.attend_memory = AttentionOverMemory(hidden_dim)
-        self.projector = tf.keras.layers.Conv2D(self.hidden_dim, 1)
+        self.projector = tf.keras.layers.Conv2D(hidden_dim, 1)
         self.decoder = tf.keras.Sequential([
+            tf.keras.layers.Conv2D(hidden_dim, 3, padding='same', activation='relu'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Conv2D(hidden_dim, 3, padding='same', activation='relu'),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Conv2D(hidden_dim, 3, padding='same', activation='relu'),
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Conv2D(10, 1)
         ])
-        self.gate_scale = tf.keras.layers.Dense(self.hidden_dim, activation='sigmoid')
+        self.gate_scale = tf.keras.layers.Dense(hidden_dim, activation='sigmoid')
 
     def call(self, x_seq, y_seq=None, training=False):
         batch = tf.shape(x_seq)[0]
@@ -231,6 +246,10 @@ class Sage14FX(tf.keras.Model):
             alpha = tf.reshape(self._alpha, [batch, 1, 1, 1])
             blended = alpha * blended + (1 - alpha) * last_input_encoded
 
+        for _ in range(2):
+            refined = self.attn(blended)
+            blended = tf.nn.relu(blended + refined)
+
         output_logits = self.decoder(blended)
 
         if y_seq is not None:
@@ -243,7 +262,7 @@ class Sage14FX(tf.keras.Model):
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             loss = loss_fn(y_seq[:, -1], output_logits)
-            loss += 0.01 * tf.reduce_sum(alpha)  # Ensure alpha influences the gradient path
+            loss += 0.01 * tf.reduce_sum(alpha)
             self._loss_pain = loss
 
         return output_logits
